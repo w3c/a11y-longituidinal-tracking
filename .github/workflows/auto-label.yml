@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Extract shortname and add as label
+      - name: Extract shortname and add label with color
         uses: actions/github-script@v6
         with:
           script: |
@@ -20,19 +20,46 @@ jobs:
             const match = issueBody.match(/shortname:\s*(\w+)/i);
             if (match && match[1]) {
               const shortname = match[1];
-              const label = `s:${shortname}`;
+              const labelName = `s:${shortname}`;
+              const labelColor = "6bc5c6";
 
-              // 添加标签
+              // 检查是否已有该标签
+              const labels = await github.rest.issues.listLabelsForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+              });
+
+              const existingLabel = labels.data.find(label => label.name === labelName);
+
+              if (!existingLabel) {
+                // 创建新的标签并设置颜色
+                try {
+                  await github.rest.issues.createLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    name: labelName,
+                    color: labelColor,
+                    description: `Automatically created label for shortname: ${shortname}`,
+                  });
+                  console.log(`Label '${labelName}' created with color #${labelColor}.`);
+                } catch (error) {
+                  console.error(`Failed to create label: ${error.message}`);
+                }
+              } else {
+                console.log(`Label '${labelName}' already exists.`);
+              }
+
+              // 添加标签到 Issue
               try {
                 await github.rest.issues.addLabels({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: issueNumber,
-                  labels: [label],
+                  labels: [labelName],
                 });
-                console.log(`Label '${label}' added to issue #${issueNumber}`);
+                console.log(`Label '${labelName}' added to issue #${issueNumber}`);
               } catch (error) {
-                console.error(`Failed to add label: ${error.message}`);
+                console.error(`Failed to add label to issue: ${error.message}`);
               }
             } else {
               console.log("No shortname found in the issue body.");
