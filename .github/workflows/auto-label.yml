@@ -1,0 +1,39 @@
+name: Auto Label Issues with Shortname
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  add-label:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Extract shortname and add as label
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const issueBody = context.payload.issue.body || "";
+            const issueNumber = context.payload.issue.number;
+
+            // 正则表达式寻找 "shortname: VALUE"
+            const match = issueBody.match(/shortname:\s*(\w+)/i);
+            if (match && match[1]) {
+              const shortname = match[1];
+              const label = `s:${shortname}`;
+
+              // 添加标签
+              try {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  labels: [label],
+                });
+                console.log(`Label '${label}' added to issue #${issueNumber}`);
+              } catch (error) {
+                console.error(`Failed to add label: ${error.message}`);
+              }
+            } else {
+              console.log("No shortname found in the issue body.");
+            }
