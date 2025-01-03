@@ -16,8 +16,8 @@ jobs:
             const issueBody = context.payload.issue.body || "";
             const issueNumber = context.payload.issue.number;
 
-            // 正则表达式寻找 "shortname: VALUE"
-            const match = issueBody.match(/shortname:\s*(\w+)/i);
+            // 正则表达式：支持字母、数字、下划线和连字符
+            const match = issueBody.match(/shortname:\s*([a-zA-Z0-9_-]+)/i);
             if (match && match[1]) {
               const shortname = match[1];
               const labelName = `s:${shortname}`;
@@ -62,5 +62,5 @@ jobs:
                 console.error(`Failed to add label to issue: ${error.message}`);
               }
             } else {
-              console.log("No shortname found in the issue body.");
+              console.log("No valid shortname found in the issue body.");
             }
