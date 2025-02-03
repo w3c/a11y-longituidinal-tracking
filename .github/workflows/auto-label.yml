@@ -16,14 +16,14 @@ jobs:
             const issueBody = context.payload.issue.body || "";
             const issueNumber = context.payload.issue.number;
 
-            // 正则表达式：支持字母、数字、下划线和连字符
-            const match = issueBody.match(/shortname:\s*([a-zA-Z0-9_-]+)/i);
+            // 正则表达式：支持字母、数字、下划线、连字符、点、斜杠、冒号
+            const match = issueBody.match(/shortname:\s*([\w\-.:/]+)/i);
             if (match && match[1]) {
               const shortname = match[1];
               const labelName = `s:${shortname}`;
               const labelColor = "6bc5c6";
 
-              // 检查是否已有该标签
+              // 获取当前仓库的所有标签
               const labels = await github.rest.issues.listLabelsForRepo({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
