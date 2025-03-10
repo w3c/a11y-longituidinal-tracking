@@ -1,66 +1,111 @@
-name: Auto Label Issues with Shortname
+name: Auto Label and Link Related Issues
 
 on:
   issues:
     types: [opened]
 
 jobs:
-  add-label:
+  label-and-link:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Extract shortname and add label with color
+      - name: Extract shortname, add label, and link related issues
         uses: actions/github-script@v6
         with:
           script: |
             const issueBody = context.payload.issue.body || "";
             const issueNumber = context.payload.issue.number;
+            const repoOwner = context.repo.owner;
+            const repoName = context.repo.repo;
+            
+            console.log(`Processing issue #${issueNumber} in ${repoOwner}/${repoName}`);
 
-            // 正则表达式：支持字母、数字、下划线、连字符、点、斜杠、冒号
-            const match = issueBody.match(/shortname:\s*([\w\-.:/]+)/i);
-            if (match && match[1]) {
-              const shortname = match[1];
-              const labelName = `s:${shortname}`;
-              const labelColor = "6bc5c6";
+            // 正则匹配 shortname: [value] 或 shortname: value（支持 - / . _ 等字符）
+            const match = issueBody.match(/shortname:\s*\[?\s*([\w\-.:/]+)\s*\]?/i);
+            if (!match || !match[1]) {
+              console.log("No valid shortname found.");
+              return;
+            }
 
-              // 获取当前仓库的所有标签
-              const labels = await github.rest.issues.listLabelsForRepo({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
+            const shortname = match[1].trim();
+            const labelName = `s:${shortname}`;
+            const labelColor = "6bc5c6";
+            console.log(`Extracted shortname: ${shortname}, Label: ${labelName}`);
+
+            try {
+              // 获取现有标签列表，避免重复创建
+              const existingLabels = await github.rest.issues.listLabelsForRepo({
+                owner: repoOwner,
+                repo: repoName,
               });
 
-              const existingLabel = labels.data.find(label => label.name === labelName);
-
-              if (!existingLabel) {
-                // 创建新的标签并设置颜色
-                try {
-                  await github.rest.issues.createLabel({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    name: labelName,
-                    color: labelColor,
-                    description: `Automatically created label for shortname: ${shortname}`,
-                  });
-                  console.log(`Label '${labelName}' created with color #${labelColor}.`);
-                } catch (error) {
-                  console.error(`Failed to create label: ${error.message}`);
-                }
+              const labelExists = existingLabels.data.some(label => label.name === labelName);
+              if (!labelExists) {
+                // 创建新的标签
+                await github.rest.issues.createLabel({
+                  owner: repoOwner,
+                  repo: repoName,
+                  name: labelName,
+                  color: labelColor,
+                  description: `Automatically created label for shortname: ${shortname}`,
+                });
+                console.log(`Created label: ${labelName}`);
               } else {
                 console.log(`Label '${labelName}' already exists.`);
               }
 
-              // 添加标签到 Issue
-              try {
-                await github.rest.issues.addLabels({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: issueNumber,
-                  labels: [labelName],
+              // 添加标签到当前 Issue
+              await github.rest.issues.addLabels({
+                owner: repoOwner,
+                repo: repoName,
+                issue_number: issueNumber,
+                labels: [labelName],
+              });
+              console.log(`Added label '${labelName}' to issue #${issueNumber}`);
+
+              // 查找 w3c/a11y-request 仓库中是否有相同标签的 issue
+              let relatedIssues = [];
+              let page = 1;
+              const maxPages = 5;  // 最多获取 5 页数据，防止 API 速率受限
+
+              while (page <= maxPages) {
+                const response = await github.rest.issues.listForRepo({
+                  owner: "w3c",
+                  repo: "a11y-request",
+                  state: "open",
+                  labels: labelName,
+                  per_page: 50,  // 一次最多获取 50 条
+                  page: page,
                 });
-                console.log(`Label '${labelName}' added to issue #${issueNumber}`);
-              } catch (error) {
-                console.error(`Failed to add label to issue: ${error.message}`);
+
+                if (response.data.length === 0) break;  // 无更多 Issue，停止分页
+
+                relatedIssues = relatedIssues.concat(response.data);
+                console.log(`Fetched ${response.data.length} issues from page ${page}`);
+                page++;
               }
-            } else {
-              console.log("No valid shortname found in the issue body.");
+
+              if (relatedIssues.length > 0) {
+                // 生成评论内容
+                const relatedLinks = relatedIssues
+                  .map(issue => `- [#${issue.number}](${issue.html_url}): ${issue.title}`)
+                  .join("\n");
+
+                const commentBody = `Related issues found in [a11y-request](https://github.com/w3c/a11y-request):\n${relatedLinks}`;
+
+                // 在当前 Issue 下添加评论
+                await github.rest.issues.createComment({
+                  owner: repoOwner,
+                  repo: repoName,
+                  issue_number: issueNumber,
+                  body: commentBody,
+                });
+
+                console.log(`Added comment linking ${relatedIssues.length} related issues from w3c/a11y-request.`);
+              } else {
+                console.log(`No related issues found in w3c/a11y-request.`);
+              }
+            } catch (error) {
+              console.error(`Error: ${error.message}`);
             }
+
